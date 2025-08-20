@@ -2,7 +2,7 @@
 
 #include "../../include/core.h"
 
-// Define global variables
+// Define Global Variables
 Alias g_aliases[MAX_ALIASES];
 int g_alias_count = 0;
 Job g_jobs[MAX_JOBS];
@@ -11,26 +11,22 @@ char *g_shell_home_dir;
 char *g_prev_dir;
 char *g_history[HISTORY_CAPACITY];
 int g_history_count = 0;
-
 pid_t g_shell_pgid;
 struct termios g_shell_termios;
+volatile sig_atomic_t g_sigchld_received = 0;
 
 void init_shell() {
-  g_shell_home_dir = getcwd(NULL, 0); // Home dir is where shell starts
+  g_shell_home_dir = getcwd(NULL, 0);
   g_prev_dir = strdup(g_shell_home_dir);
-
   load_aliases();
   load_history();
   init_jobs();
-
-  // Signal Handling
   signal(SIGINT, SIG_IGN);
   signal(SIGTSTP, SIG_IGN);
   signal(SIGQUIT, SIG_IGN);
   signal(SIGTTIN, SIG_IGN);
   signal(SIGTTOU, SIG_IGN);
-  signal(SIGCHLD, reap_children);
-
+  signal(SIGCHLD, sigchld_handler);
   g_shell_pgid = getpid();
   if (setpgid(g_shell_pgid, g_shell_pgid) < 0) {
     perror("setpgid");
@@ -41,48 +37,46 @@ void init_shell() {
 }
 
 void launch_pipeline(Pipeline *p) {
+  if (p->num_commands == 0 || p->commands[0]->args[0] == NULL)
+    return;
   if (p->num_commands == 1 && is_builtin(p->commands[0]->args[0])) {
     execute_builtin(p->commands[0]);
     return;
   }
-
   pid_t pgid = 0;
-  int pipe_fds[2], in_fd = STDIN_FILENO, out_fd = STDOUT_FILENO;
-
+  int pipe_fds[2], in_fd = STDIN_FILENO;
   for (int i = 0; i < p->num_commands; i++) {
     if (i < p->num_commands - 1) {
       if (pipe(pipe_fds) < 0) {
         perror("pipe");
         return;
       }
-      out_fd = pipe_fds[1];
-    } else {
-      out_fd = STDOUT_FILENO;
     }
-
     pid_t pid = fork();
     if (pid < 0) {
       perror("fork");
       return;
-    } else if (pid == 0) { // Child
+    } else if (pid == 0) { // Child Process
       if (i == 0)
         pgid = getpid();
       setpgid(getpid(), pgid);
       if (!p->background)
         tcsetpgrp(STDIN_FILENO, pgid);
-
       signal(SIGINT, SIG_DFL);
       signal(SIGTSTP, SIG_DFL);
-
+      signal(SIGQUIT, SIG_DFL);
+      signal(SIGTTIN, SIG_DFL);
+      signal(SIGTTOU, SIG_DFL);
+      signal(SIGCHLD, SIG_DFL);
       if (in_fd != STDIN_FILENO) {
         dup2(in_fd, STDIN_FILENO);
         close(in_fd);
       }
-      if (out_fd != STDOUT_FILENO) {
-        dup2(out_fd, STDOUT_FILENO);
-        close(out_fd);
+      if (i < p->num_commands - 1) {
+        dup2(pipe_fds[1], STDOUT_FILENO);
+        close(pipe_fds[1]);
+        close(pipe_fds[0]);
       }
-
       SimpleCommand *sc = p->commands[i];
       if (sc->inputFile) {
         int fd = open(sc->inputFile, O_RDONLY);
@@ -103,7 +97,6 @@ void launch_pipeline(Pipeline *p) {
         dup2(fd, STDOUT_FILENO);
         close(fd);
       }
-
       if (is_builtin(sc->args[0])) {
         execute_builtin(sc);
         exit(0);
@@ -112,26 +105,23 @@ void launch_pipeline(Pipeline *p) {
         perror(sc->args[0]);
         exit(1);
       }
-    } else { // Parent
+    } else { // Parent Process
       if (i == 0)
         pgid = pid;
       setpgid(pid, pgid);
     }
-
     if (in_fd != STDIN_FILENO)
       close(in_fd);
-    if (out_fd != STDOUT_FILENO)
-      close(out_fd);
-    in_fd = pipe_fds[0];
+    if (i < p->num_commands - 1) {
+      in_fd = pipe_fds[0];
+      close(pipe_fds[1]);
+    }
   }
-
   Job *job = add_job(pgid, p->full_text, p->background);
-
   if (!p->background) {
     tcsetpgrp(STDIN_FILENO, pgid);
     int status;
     waitpid(pgid, &status, WUNTRACED);
-
     if (WIFSTOPPED(status)) {
       printf("\nStopped: %s\n", p->full_text);
       job->status = STOPPED;
@@ -146,32 +136,32 @@ void launch_pipeline(Pipeline *p) {
 }
 
 void shell_loop(void) {
-  char *line;
-  Pipeline **pipelines;
-  int pipeline_count;
-
   while (1) {
-    reap_children(0);
+    if (g_sigchld_received) {
+      check_jobs_status();
+      g_sigchld_received = 0;
+    }
     char *prompt = get_prompt();
-    line = read_line_raw(prompt);
+    char *line = read_line_raw(prompt);
     free(prompt);
-
     if (strlen(line) > 0) {
       add_to_history(line);
       save_history();
-
-      pipelines = parse_line(line, &pipeline_count);
-      for (int i = 0; i < pipeline_count; i++) {
-        launch_pipeline(pipelines[i]);
-        free_pipeline(pipelines[i]);
+      int pipeline_count = 0;
+      Pipeline **pipelines = parse_line(line, &pipeline_count);
+      if (pipelines) {
+        for (int i = 0; i < pipeline_count; i++) {
+          launch_pipeline(pipelines[i]);
+          free_pipeline(pipelines[i]);
+        }
+        free(pipelines);
       }
-      free(pipelines);
     }
     free(line);
   }
 }
 
-int main() {
+int main(int argc, char **argv) {
   init_shell();
   shell_loop();
   return EXIT_SUCCESS;

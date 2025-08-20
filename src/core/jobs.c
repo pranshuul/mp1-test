@@ -2,6 +2,31 @@
 
 #include "../../include/core.h"
 
+// This is the signal handler. It only sets a flag. It is async-signal-safe.
+void sigchld_handler(int signal) { g_sigchld_received = 1; }
+
+// This function is called from the main loop, not the signal handler. It is
+// safe.
+void check_jobs_status(void) {
+  int status;
+  pid_t pid;
+  while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED | WCONTINUED)) > 0) {
+    for (int i = 0; i < g_job_count; i++) {
+      if (g_jobs[i].pgid == pid) {
+        if (WIFEXITED(status) || WIFSIGNALED(status)) {
+          printf("\n[%d] Done\t%s\n", i + 1, g_jobs[i].command);
+          remove_job_by_pgid(pid);
+        } else if (WIFSTOPPED(status)) {
+          update_job_status(pid, STOPPED);
+        } else if (WIFCONTINUED(status)) {
+          update_job_status(pid, RUNNING);
+        }
+        break;
+      }
+    }
+  }
+}
+
 void init_jobs() {
   for (int i = 0; i < MAX_JOBS; i++) {
     g_jobs[i].pgid = 0;
@@ -48,33 +73,4 @@ Job *get_job_by_id(int id) {
     return &g_jobs[id - 1];
   }
   return NULL;
-}
-
-Job *get_job_by_pgid(pid_t pgid) {
-  for (int i = 0; i < g_job_count; i++) {
-    if (g_jobs[i].pgid == pgid) {
-      return &g_jobs[i];
-    }
-  }
-  return NULL;
-}
-
-void reap_children(int signal) {
-  int status;
-  pid_t pid;
-  while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED | WCONTINUED)) > 0) {
-    Job *job = get_job_by_pgid(pid);
-    if (job) { // Only manage PIDs that are process group leaders
-      if (WIFEXITED(status) || WIFSIGNALED(status)) {
-        if (job->status != DONE) {
-          printf("[%d] Done\t%s\n", g_job_count, job->command);
-        }
-        remove_job_by_pgid(pid);
-      } else if (WIFSTOPPED(status)) {
-        update_job_status(pid, STOPPED);
-      } else if (WIFCONTINUED(status)) {
-        update_job_status(pid, RUNNING);
-      }
-    }
-  }
 }

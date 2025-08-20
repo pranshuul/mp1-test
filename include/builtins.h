@@ -3,12 +3,14 @@
 #ifndef H_INCLUDE_BUILTINS
 #define H_INCLUDE_BUILTINS
 
-// Forward declaration
+// Forward declaration for type safety
 typedef struct SimpleCommand SimpleCommand;
 
-// Built-in function prototypes
+// Built-in command dispatcher functions
 int is_builtin(const char *cmd_name);
 void execute_builtin(SimpleCommand *cmd);
+
+// Individual built-in command function prototypes
 void hop(SimpleCommand *cmd);
 void reveal(SimpleCommand *cmd);
 void alias_cmd(SimpleCommand *cmd);
@@ -18,4 +20,4 @@ void activities(SimpleCommand *cmd);
 void fg(SimpleCommand *cmd);
 void bg(SimpleCommand *cmd);
 
-#endif // H_INCLUDE_BUILTINS
+#endif

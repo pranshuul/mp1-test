@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = -Wall -Werror -Wextra -Wno-unused-parameter -Iinclude -D_DEFAULT_SOURCE -g -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -fno-asm
-LDFLAGS =
+# Non-negotiable CFLAGS as provided
+CFLAGS = -std=c99 -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_DEFAULT_SOURCE -g -Wall -Wextra -Werror -Wno-unused-parameter -Iinclude -fno-asm
 
 SRCDIR = src
 
@@ -11,14 +11,14 @@ UTILS_SRC = $(wildcard $(SRCDIR)/utils/*.c)
 SRC = $(CORE_SRC) $(BUILTINS_SRC) $(UTILS_SRC)
 OBJ = $(SRC:.c=.o)
 
-TARGET = shell
+TARGET = shell.out
 
 .PHONY: all clean test
 
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJ) $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJ)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

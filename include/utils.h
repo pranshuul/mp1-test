@@ -3,20 +3,18 @@
 #ifndef H_INCLUDE_UTILS
 #define H_INCLUDE_UTILS
 
-// Alias utilities
+// Alias utility functions
 void load_aliases(void);
 void save_aliases(void);
 char *get_alias_command(const char *name);
-void add_alias(char *name, char *command);
+void add_alias(const char *name, const char *command);
 
-// History utilities
+// History utility functions
 void load_history(void);
 void save_history(void);
 void add_to_history(const char *command);
 
-// Input utilities
+// Raw input utility function
 char *read_line_raw(const char *prompt);
-void enable_raw_mode(void);
-void disable_raw_mode(void);
 
-#endif // H_INCLUDE_UTILS
+#endif
