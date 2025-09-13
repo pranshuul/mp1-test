@@ -39,10 +39,10 @@ void shell_loop(void) {
     }
 
     if (fgets(input, MAX_INPUT_SIZE, stdin) == NULL) {
-      // Only reason for NULL now should be Ctrl-D (EOF)
+      // This is now only reached on Ctrl-D (EOF) due to SA_RESTART
       if (isatty(STDIN_FILENO))
         printf("\n");
-      break;
+      break; // Correctly exit the loop on EOF
     }
 
     // Ignore empty input or comments
@@ -55,6 +55,7 @@ void shell_loop(void) {
         free_ast(ast);
       }
     }
+    // The loop correctly continues to the next iteration from here.
   }
 }
 

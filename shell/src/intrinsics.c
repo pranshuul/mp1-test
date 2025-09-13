@@ -308,17 +308,24 @@ int builtin_exit(char **args) {
   return 0; // Unreachable
 }
 
-// Map command names to functions
-static const BuiltinCommand builtins[] = {
-    {"hop", builtin_hop},
-    {"reveal", builtin_reveal},
-    {"log", builtin_log},
-    {"ping", builtin_ping},
-    {"activities", builtin_activities},
-    {"fg", builtin_fg},
-    {"bg", builtin_bg},
-    {"exit", builtin_exit}, // Register the exit command
-    {NULL, NULL}};
+static const BuiltinCommand builtins[] = {{"hop", builtin_hop},
+                                          {"reveal", builtin_reveal},
+                                          {"log", builtin_log},
+                                          {"ping", builtin_ping},
+                                          {"activities", builtin_activities},
+                                          {"fg", builtin_fg},
+                                          {"bg", builtin_bg},
+                                          {"exit", builtin_exit},
+                                          {NULL, NULL}};
+
+// NEW: Helper function to identify commands that MUST run in the parent
+// process.
+int is_parent_builtin(const char *cmd_name) {
+  if (cmd_name == NULL)
+    return 0;
+  return strcmp(cmd_name, "hop") == 0 || strcmp(cmd_name, "exit") == 0 ||
+         strcmp(cmd_name, "fg") == 0 || strcmp(cmd_name, "bg") == 0;
+}
 
 int handle_builtin(CommandNode *cmd) {
   if (cmd->arg_count == 0)
