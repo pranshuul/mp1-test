@@ -1,6 +1,6 @@
 # Compiler and flags
 CC = gcc
-CFLAGS = -std=c99 -Wall -Werror -fsanitize=address,undefined -Iinclude
+CFLAGS = -std=c99 -Wall -Werror -fsanitize=address,undefined -Iinclude -D_POSIX_C_SOURCE=200809L
 LDFLAGS = -fsanitize=address,undefined
 
 # Directories
@@ -34,4 +34,4 @@ clean:
 	@echo "Cleaned up build artifacts."
 
 # Phony targets
-.PHONY: all clean test
+.PHONY: all clean

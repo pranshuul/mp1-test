@@ -130,7 +130,11 @@ static void apply_redirections(CommandNode *cmd) {
 }
 
 static void launch_process(CommandNode *cmd, pid_t pgid, int is_background,
-                           int in_fd, int out_fd) {
+                           int in_fd, int out_fd, int is_pipe) {
+  if (!is_pipe && handle_builtin(cmd) != -1) {
+    exit(EXIT_SUCCESS);
+  }
+
   pid_t pid = getpid();
   if (pgid == 0)
     pgid = pid;
@@ -157,6 +161,11 @@ static void launch_process(CommandNode *cmd, pid_t pgid, int is_background,
 
   apply_redirections(cmd);
 
+  // Built-ins can be part of a pipe, so check for them here before exec
+  if (handle_builtin(cmd) != -1) {
+    exit(EXIT_SUCCESS);
+  }
+
   if (execvp(cmd->args[0], cmd->args) < 0) {
     perror(cmd->args[0]);
     exit(EXIT_FAILURE);
@@ -164,16 +173,16 @@ static void launch_process(CommandNode *cmd, pid_t pgid, int is_background,
 }
 
 static void execute_command(CommandNode *cmd, pid_t pgid, int is_background) {
-  if (handle_builtin(cmd) != -1) {
-    return;
+  if (!is_background && cmd->arg_count > 0 && handle_builtin(cmd) != -1) {
+    return; // Handle built-in in parent shell for non-background cases
   }
 
   char *full_command = reconstruct_command(cmd);
 
   pid_t pid = fork();
   if (pid == 0) { // Child
-    launch_process(cmd, pgid, is_background, STDIN_FILENO, STDOUT_FILENO);
-  } else { // Parent
+    launch_process(cmd, pgid, is_background, STDIN_FILENO, STDOUT_FILENO, 0);
+  } else if (pid > 0) { // Parent
     if (pgid == 0)
       pgid = pid;
     setpgid(pid, pgid);
@@ -201,49 +210,45 @@ static void execute_command(CommandNode *cmd, pid_t pgid, int is_background) {
       if (job)
         print_job_status(job, 0);
     }
+  } else {
+    perror("fork");
   }
   free(full_command);
 }
 
-static void execute_pipe(PipeNode *node) {
+static void execute_pipe(PipeNode *node, int is_background) {
   int pipefd[2];
-  pipe(pipefd);
-
   pid_t left_pid, right_pid;
+  int status;
+
+  if (pipe(pipefd) < 0) {
+    perror("pipe");
+    return;
+  }
 
   left_pid = fork();
-  if (left_pid == 0) { // First child
+  if (left_pid == 0) { // First child (left side of pipe)
     close(pipefd[0]);
-    // Recursive call for complex pipes
-    if (node->left->type == NODE_COMMAND) {
-      launch_process((CommandNode *)node->left, 0, 0, STDIN_FILENO, pipefd[1]);
-    } else {
-      // This simple implementation does not fully support chaining complex
-      // structures in pipes For the assignment, we assume pipe is between
-      // simple commands.
-      exit(1);
-    }
+    // Recursively execute the left side, writing to the pipe
+    execute_ast(node->left);
+    exit(EXIT_FAILURE); // Should not be reached
   }
 
   right_pid = fork();
-  if (right_pid == 0) { // Second child
+  if (right_pid == 0) { // Second child (right side of pipe)
     close(pipefd[1]);
-    if (node->right->type == NODE_COMMAND) {
-      launch_process((CommandNode *)node->right, left_pid, 0, pipefd[0],
-                     STDOUT_FILENO);
-    } else if (node->right->type ==
-               NODE_PIPE) { // Handle pipe chains like a | b | c
-      execute_pipe((PipeNode *)node->right);
-    } else {
-      exit(1);
-    }
+    dup2(pipefd[0], STDIN_FILENO); // Read from the pipe
+    close(pipefd[0]);
+    // Recursively execute the right side
+    execute_ast(node->right);
+    exit(EXIT_FAILURE); // Should not be reached
   }
 
   // Parent
   close(pipefd[0]);
   close(pipefd[1]);
 
-  int status;
+  // Wait for both children to finish
   waitpid(left_pid, &status, 0);
   waitpid(right_pid, &status, 0);
 }
@@ -252,12 +257,24 @@ void execute_ast(ASTNode *node) {
   if (!node)
     return;
   switch (node->type) {
-  case NODE_COMMAND:
-    execute_command((CommandNode *)node, 0, ((CommandNode *)node)->background);
+  case NODE_COMMAND: {
+    CommandNode *cmd = (CommandNode *)node;
+    execute_command(cmd, 0, cmd->background);
     break;
-  case NODE_PIPE:
-    execute_pipe((PipeNode *)node);
+  }
+  case NODE_PIPE: {
+    // Check if the entire pipe is background
+    ASTNode *temp = node;
+    int is_bg = 0;
+    while (temp->type == NODE_PIPE) {
+      temp = ((PipeNode *)temp)->right;
+    }
+    if (temp->type == NODE_COMMAND) {
+      is_bg = ((CommandNode *)temp)->background;
+    }
+    execute_pipe((PipeNode *)node, is_bg);
     break;
+  }
   case NODE_SEQUENCE:
     execute_ast(((SequenceNode *)node)->left);
     check_background_jobs(); // Reap jobs between sequential commands

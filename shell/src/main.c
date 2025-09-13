@@ -7,12 +7,16 @@
 pid_t g_fg_pgid = 0;
 
 void sigint_handler(int sig) {
+  // Suppress unused variable warning
+  (void)sig;
   if (g_fg_pgid > 0) {
     kill(-g_fg_pgid, SIGINT);
   }
 }
 
 void sigtstp_handler(int sig) {
+  // Suppress unused variable warning
+  (void)sig;
   if (g_fg_pgid > 0) {
     kill(-g_fg_pgid, SIGTSTP);
   }
@@ -35,7 +39,7 @@ void shell_loop(void) {
       break;
     }
 
-    // Ignore empty input
+    // Ignore empty input or comments
     if (strlen(input) > 0 && input[0] != '\n' && input[0] != '#') {
       input[strcspn(input, "\n")] = 0; // Remove trailing newline
       add_to_history(input);
@@ -52,13 +56,16 @@ int main(void) {
   // Setup signal handlers
   signal(SIGINT, sigint_handler);
   signal(SIGTSTP, sigtstp_handler);
-  signal(SIGQUIT, SIG_IGN); // Ignore Ctrl-\
-    signal(SIGTTIN, SIG_IGN); // Ignore terminal input for background processes
+  signal(SIGQUIT, SIG_IGN); // Ignore Ctrl-Backslash (SIGQUIT)
+  signal(SIGTTIN, SIG_IGN); // Ignore terminal input for background processes
   signal(SIGTTOU, SIG_IGN); // Ignore terminal output for background processes
 
-  // Set shell's process group
-  setpgid(getpid(), getpid());
-  tcsetpgrp(STDIN_FILENO, getpid());
+  // Set shell's process group and take control of the terminal
+  if (isatty(STDIN_FILENO)) {
+    pid_t shell_pgid = getpid();
+    setpgid(shell_pgid, shell_pgid);
+    tcsetpgrp(STDIN_FILENO, shell_pgid);
+  }
 
   init_jobs();
   init_history();

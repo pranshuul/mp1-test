@@ -1,5 +1,7 @@
+#define _POSIX_C_SOURCE 200809L // Expose POSIX function declarations
 #include "../include/intrinsics.h"
 #include "../include/jobs.h"
+#include <limits.h> // For PATH_MAX
 
 // History storage
 static char *history[MAX_HISTORY];
@@ -79,29 +81,48 @@ int builtin_log(char **args) {
 int builtin_hop(char **args) {
   static char prev_dir[PATH_MAX] = "";
   char current_dir[PATH_MAX];
+  const char *target_dir;
+  int print_path = 0; // Flag to print path for 'hop -'
 
-  if (getcwd(current_dir, PATH_MAX) == NULL) {
-    perror("hop");
+  if (getcwd(current_dir, sizeof(current_dir)) == NULL) {
+    perror("hop: getcwd");
     return 1;
   }
 
-  const char *target_dir = args[1];
-  if (target_dir == NULL) {
+  if (args[1] == NULL) {
     target_dir = getenv("HOME");
-  } else if (strcmp(target_dir, "-") == 0) {
-    if (strlen(prev_dir) == 0) {
+    if (target_dir == NULL) {
+      fprintf(stderr, "hop: HOME not set\n");
+      return 1;
+    }
+  } else if (strcmp(args[1], "-") == 0) {
+    if (prev_dir[0] == '\0') {
       fprintf(stderr, "hop: no previous directory\n");
       return 1;
     }
     target_dir = prev_dir;
+    print_path = 1;
+  } else {
+    target_dir = args[1];
   }
+
+  // Save the current directory to update prev_dir *after* a successful change
+  char temp_dir_for_prev[PATH_MAX];
+  strcpy(temp_dir_for_prev, current_dir);
 
   if (chdir(target_dir) != 0) {
     perror("hop");
     return 1;
   }
 
-  strcpy(prev_dir, current_dir);
+  // On success, update the previous directory
+  strcpy(prev_dir, temp_dir_for_prev);
+
+  if (print_path) {
+    if (getcwd(current_dir, sizeof(current_dir)) != NULL) {
+      printf("%s\n", current_dir);
+    }
+  }
   return 0;
 }
 
