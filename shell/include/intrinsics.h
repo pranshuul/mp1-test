@@ -24,6 +24,7 @@ int builtin_ping(char **args);
 int builtin_activities(char **args);
 int builtin_fg(char **args);
 int builtin_bg(char **args);
+int builtin_exit(char **args); // New function
 
 // History management functions
 void init_history(void);

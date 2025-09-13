@@ -3,15 +3,15 @@
 #include "../include/jobs.h"
 #include <limits.h> // For PATH_MAX
 
-// History storage
-static char *history[MAX_HISTORY];
-static int history_count = 0;
-static int history_start = 0;
-
 // Helper function for qsort to compare two strings
 static int compare_strings(const void *a, const void *b) {
   return strcmp(*(const char **)a, *(const char **)b);
 }
+
+// History storage
+static char *history[MAX_HISTORY];
+static int history_count = 0;
+static int history_start = 0;
 
 void init_history() {
   for (int i = 0; i < MAX_HISTORY; ++i)
@@ -83,11 +83,13 @@ int builtin_log(char **args) {
   return 0;
 }
 
+// --- UPDATED hop FUNCTION ---
 int builtin_hop(char **args) {
   static char prev_dir[PATH_MAX] = "";
   char current_dir[PATH_MAX];
+  char expanded_path[PATH_MAX];
   const char *target_dir;
-  int print_path = 0; // Flag to print path for 'hop -'
+  int print_path = 0;
 
   if (getcwd(current_dir, sizeof(current_dir)) == NULL) {
     perror("hop: getcwd");
@@ -95,11 +97,8 @@ int builtin_hop(char **args) {
   }
 
   if (args[1] == NULL) {
-    target_dir = getenv("HOME");
-    if (target_dir == NULL) {
-      fprintf(stderr, "hop: HOME not set\n");
-      return 1;
-    }
+    // 'hop' with no arguments goes to the shell's starting directory
+    target_dir = g_shell_home_dir;
   } else if (strcmp(args[1], "-") == 0) {
     if (prev_dir[0] == '\0') {
       fprintf(stderr, "hop: no previous directory\n");
@@ -109,9 +108,15 @@ int builtin_hop(char **args) {
     print_path = 1;
   } else {
     target_dir = args[1];
+    // --- Tilde Expansion Logic (using shell home) ---
+    if (target_dir[0] == '~') {
+      // Safely construct the full path using the shell's home directory
+      snprintf(expanded_path, sizeof(expanded_path), "%s%s", g_shell_home_dir,
+               target_dir + 1);
+      target_dir = expanded_path;
+    }
   }
 
-  // Save the current directory to update prev_dir *after* a successful change
   char temp_dir_for_prev[PATH_MAX];
   strcpy(temp_dir_for_prev, current_dir);
 
@@ -120,7 +125,6 @@ int builtin_hop(char **args) {
     return 1;
   }
 
-  // On success, update the previous directory
   strcpy(prev_dir, temp_dir_for_prev);
 
   if (print_path) {
@@ -298,15 +302,23 @@ int builtin_bg(char **args) {
   return 0;
 }
 
+int builtin_exit(char **args) {
+  (void)args; // Suppress unused parameter warning
+  exit(0);
+  return 0; // Unreachable
+}
+
 // Map command names to functions
-static const BuiltinCommand builtins[] = {{"hop", builtin_hop},
-                                          {"reveal", builtin_reveal},
-                                          {"log", builtin_log},
-                                          {"ping", builtin_ping},
-                                          {"activities", builtin_activities},
-                                          {"fg", builtin_fg},
-                                          {"bg", builtin_bg},
-                                          {NULL, NULL}};
+static const BuiltinCommand builtins[] = {
+    {"hop", builtin_hop},
+    {"reveal", builtin_reveal},
+    {"log", builtin_log},
+    {"ping", builtin_ping},
+    {"activities", builtin_activities},
+    {"fg", builtin_fg},
+    {"bg", builtin_bg},
+    {"exit", builtin_exit}, // Register the exit command
+    {NULL, NULL}};
 
 int handle_builtin(CommandNode *cmd) {
   if (cmd->arg_count == 0)
