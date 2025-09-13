@@ -27,7 +27,9 @@ void shell_loop(void);
 void sigint_handler(int sig);
 void sigtstp_handler(int sig);
 
-// Global variable for foreground process group ID
+// Global variables
 extern pid_t g_fg_pgid;
+extern char
+    g_shell_home_dir[PATH_MAX]; // The directory where the shell was started
 
 #endif // SHELL_H

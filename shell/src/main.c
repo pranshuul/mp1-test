@@ -4,7 +4,9 @@
 #include "../include/parser.h"
 #include "../include/shell.h"
 
+// --- Global Variable Definitions ---
 pid_t g_fg_pgid = 0;
+char g_shell_home_dir[PATH_MAX];
 
 void sigint_handler(int sig) {
   // Suppress unused variable warning
@@ -27,9 +29,12 @@ void shell_loop(void) {
   ASTNode *ast = NULL;
 
   while (1) {
-    check_background_jobs();
-    if (isatty(STDIN_FILENO)) {
-      display_prompt();
+    // Only display prompt if a foreground job isn't running
+    if (g_fg_pgid == 0) {
+      check_background_jobs();
+      if (isatty(STDIN_FILENO)) {
+        display_prompt();
+      }
     }
 
     if (fgets(input, MAX_INPUT_SIZE, stdin) == NULL) {
@@ -53,6 +58,12 @@ void shell_loop(void) {
 }
 
 int main(void) {
+  // --- Initialize Shell Home Directory ---
+  if (getcwd(g_shell_home_dir, sizeof(g_shell_home_dir)) == NULL) {
+    perror("Failed to get shell home directory");
+    return EXIT_FAILURE;
+  }
+
   // Setup signal handlers
   signal(SIGINT, sigint_handler);
   signal(SIGTSTP, sigtstp_handler);

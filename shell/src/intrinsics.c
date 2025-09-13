@@ -8,6 +8,11 @@ static char *history[MAX_HISTORY];
 static int history_count = 0;
 static int history_start = 0;
 
+// Helper function for qsort to compare two strings
+static int compare_strings(const void *a, const void *b) {
+  return strcmp(*(const char **)a, *(const char **)b);
+}
+
 void init_history() {
   for (int i = 0; i < MAX_HISTORY; ++i)
     history[i] = NULL;
@@ -130,8 +135,8 @@ int builtin_reveal(char **args) {
   int show_hidden = 0;
   int long_format = 0;
   char *target_dir = ".";
-  int path_arg_found = 0;
 
+  // --- 1. Parse arguments and flags ---
   for (int i = 1; args[i] != NULL; ++i) {
     if (args[i][0] == '-') {
       for (size_t j = 1; j < strlen(args[i]); ++j) {
@@ -145,12 +150,7 @@ int builtin_reveal(char **args) {
         }
       }
     } else {
-      if (path_arg_found) {
-        fprintf(stderr, "reveal: too many arguments\n");
-        return 1;
-      }
       target_dir = args[i];
-      path_arg_found = 1;
     }
   }
 
@@ -160,17 +160,57 @@ int builtin_reveal(char **args) {
     return 1;
   }
 
+  // --- 2. Read entries into a dynamic array ---
+  char **entries = NULL;
+  size_t count = 0;
+  size_t capacity = 16; // Initial capacity
+  entries = malloc(capacity * sizeof(char *));
+  if (!entries) {
+    perror("malloc");
+    closedir(dir);
+    return 1;
+  }
+
   struct dirent *entry;
   while ((entry = readdir(dir)) != NULL) {
     if (!show_hidden && entry->d_name[0] == '.') {
       continue;
     }
-    printf("%s%s", entry->d_name, long_format ? "\n" : "  ");
+    if (count >= capacity) {
+      capacity *= 2;
+      char **new_entries = realloc(entries, capacity * sizeof(char *));
+      if (!new_entries) {
+        perror("realloc");
+        // Free existing memory before failing
+        for (size_t i = 0; i < count; i++)
+          free(entries[i]);
+        free(entries);
+        closedir(dir);
+        return 1;
+      }
+      entries = new_entries;
+    }
+    entries[count++] = strdup(entry->d_name);
+  }
+  closedir(dir);
+
+  // --- 3. Sort the array ---
+  qsort(entries, count, sizeof(char *), compare_strings);
+
+  // --- 4. Print the sorted entries ---
+  for (size_t i = 0; i < count; i++) {
+    printf("%s%s", entries[i], long_format ? "\n" : "  ");
+  }
+  if (!long_format && count > 0) {
+    printf("\n");
   }
 
-  if (!long_format)
-    printf("\n");
-  closedir(dir);
+  // --- 5. Free all allocated memory ---
+  for (size_t i = 0; i < count; i++) {
+    free(entries[i]);
+  }
+  free(entries);
+
   return 0;
 }
 
