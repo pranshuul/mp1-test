@@ -1,2 +1,3 @@
 *.o
 shell.out
+.shell_history
